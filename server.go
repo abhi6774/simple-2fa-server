@@ -11,6 +11,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"html"
@@ -54,11 +55,26 @@ func main() {
 	log.Printf("serving http://%s\n", *addr)
 	log.Fatal(http.ListenAndServe(*addr, nil))
 }
-// users := map[string]string{}
+
+type User struct {
+	Name string `json:"name"`
+}
+
 func handleUser(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
+		var user User
 
+		defer r.Body.Close()
+		err := json.NewDecoder(r.Body).Decode(&user)
 
+		if err != nil {
+			print("Error: ", err)
+			http.Error(w, "Invalid JSON", http.StatusBadRequest)
+			return
+		}
+
+		response := fmt.Sprintf("Hello, %s!", user.Name)
+		json.NewEncoder(w).Encode(response)
 	}
 }
 
