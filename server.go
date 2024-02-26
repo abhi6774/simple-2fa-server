@@ -57,7 +57,8 @@ func main() {
 }
 
 type User struct {
-	Name string `json:"name"`
+	Name     string `json:"name"`
+	Username string `json:"username"`
 }
 
 func handleUser(w http.ResponseWriter, r *http.Request) {
@@ -73,8 +74,7 @@ func handleUser(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		response := fmt.Sprintf("Hello, %s!", user.Name)
-		json.NewEncoder(w).Encode(response)
+		json.NewEncoder(w).Encode(user)
 	}
 }
 
