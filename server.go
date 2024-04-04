@@ -1,13 +1,3 @@
-// Copyright 2023 The Go Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
-
-// Hello is a simple hello, world demonstration web server.
-//
-// It serves version information on /version and answers
-// any other request like /name by saying "Hello, name!".
-//
-// See golang.org/x/example/outyet for a more sophisticated server.
 package main
 
 import (
@@ -16,10 +6,19 @@ import (
 	"fmt"
 	"html"
 	"log"
-	"net/http"
 	"os"
 	"runtime/debug"
 	"strings"
+	"time"
+	"github.com/gofiber/fiber/v2"
+	"github.com/pquerna/otp"
+	"github.com/pquerna/otp/totp"
+)
+
+var (
+	secretKey = "a21d94fdd217674b9232c60112d3142a"
+	app       = fiber.New(fiber.Config{})
+	secret    string
 )
 
 func usage() {
@@ -33,6 +32,36 @@ var (
 	addr     = flag.String("addr", "localhost:8080", "address to serve")
 )
 
+func generateURI() (*otp.Key, error) {
+	otpConfig := totp.GenerateOpts{
+		Issuer:      "Glxy",
+		AccountName: "abhi@mail.com",
+		Secret:      []byte(secretKey),
+		Period: 60,
+
+	}
+
+	otpURI, err := totp.Generate(otpConfig)
+	if err != nil {
+		log.Fatal(err)
+		return nil, err
+	}
+	fmt.Println("TOTP URI:", otpURI)
+	secret = otpURI.Secret()
+
+	return otpURI, nil
+}
+
+func getOTP() (string, error) {
+	code, err := totp.GenerateCode(secret, time.Now())
+	if err != nil {
+		fmt.Println("Error When generating code: ", err)
+		return "", err
+	}
+	return code, nil
+}
+
+
 func main() {
 	// Parse flags.
 	flag.Usage = usage
@@ -44,57 +73,78 @@ func main() {
 		usage()
 	}
 
-	// Register handlers.
-	// All requests not otherwise mapped with go to greet.
-	// /version is mapped specifically to version.
-	http.HandleFunc("/", greet)
-	http.HandleFunc("/version", version)
+	app.Get("/", greet)
+	app.Get("/version", version)
 
-	http.HandleFunc("/user", handleUser)
-
-	log.Printf("serving http://%s\n", *addr)
-	log.Fatal(http.ListenAndServe(*addr, nil))
-}
-
-type User struct {
-	Name     string `json:"name"`
-	Username string `json:"username"`
-}
-
-func handleUser(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodPost {
-		var user User
-
-		defer r.Body.Close()
-		err := json.NewDecoder(r.Body).Decode(&user)
-
+	app.Get("/geturi", func(ctx *fiber.Ctx) error {
+		otpURI, err := generateURI()
 		if err != nil {
-			print("Error: ", err)
-			http.Error(w, "Invalid JSON", http.StatusBadRequest)
-			return
+			log.Fatal(err)
+			return err
+		}
+		ctx.Status(201).SendString(fmt.Sprintf("%v", otpURI))
+		return nil
+	})
+
+	app.Get("/generateOTP", func(ctx *fiber.Ctx) error {
+		code, err := getOTP()
+		if err != nil {
+			log.Fatal(err)
+			return err
+		}
+		ctx.Status(201).JSON(map[string]any{
+			"code": code,
+		})
+		return nil
+	})
+
+	app.Post("/validate", func(ctx *fiber.Ctx) error {
+		type SecretPost struct {
+			Code string `json:"code"`
 		}
 
-		json.NewEncoder(w).Encode(user)
-	}
+		body := ctx.Body()
+
+		jsonData := SecretPost{}
+		err := json.Unmarshal(body, &jsonData)
+		fmt.Println("Check", secret, jsonData.Code)
+		if err != nil {
+			str := fmt.Sprintln("Error parsing the body to json: ", err)
+			ctx.Status(500).SendString(str)
+			return err
+		}
+
+		result := totp.Validate(jsonData.Code, secret)
+		ctx.JSON(map[string]any{
+			"verified": result,
+		})
+		return nil
+	})
+
+	log.Printf("serving http://%s\n", *addr)
+	log.Fatal(app.Listen(*addr))
 }
 
-func version(w http.ResponseWriter, r *http.Request) {
+func version(ctx *fiber.Ctx) error {
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
-		http.Error(w, "no build information available", 500)
-		return
+		ctx.Status(500).SendString("no build information available")
+		return nil
 	}
 
-	fmt.Fprintf(w, "<!DOCTYPE html>\n<pre>\n")
-	fmt.Fprintf(w, "%s\n", html.EscapeString(info.String()))
+	ctx.Context().SetContentType("text/html; charset=utf-8")
+	fmt.Fprintf(ctx, "<!DOCTYPE html>\n<pre>\n")
+	fmt.Fprintf(ctx, "%s\n", html.EscapeString(info.String()))
+	return nil
 }
 
-func greet(w http.ResponseWriter, r *http.Request) {
-	name := strings.Trim(r.URL.Path, "/")
+func greet(ctx *fiber.Ctx) error {
+	name := strings.Trim(ctx.BaseURL(), "/")
 	if name == "" {
-		name = "Go App"
+		name = "Gopher"
 	}
 
-	fmt.Fprintf(w, "<!DOCTYPE html>\n")
-	fmt.Fprintf(w, "%s, %s!\n", *greeting, html.EscapeString(name))
+	fmt.Fprintf(ctx, "<!DOCTYPE html>\n")
+	fmt.Fprintf(ctx, "%s, %s!\n", *greeting, html.EscapeString(name))
+	return nil
 }

@@ -1,0 +1,15 @@
+GET http://localhost:8080/
+
+###
+GET http://localhost:8080/generateOTP
+
+###
+GET http://localhost:8080/geturi
+
+###
+GET http://localhost:8080/validate
+Content-Type: "application/json"
+
+{
+    "code": ""
+}
